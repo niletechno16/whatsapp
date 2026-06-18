@@ -1,1 +1,0 @@
-Deploy to Render as Web Service. Webhook URL: https://YOURAPP.onrender.com/webhook/
