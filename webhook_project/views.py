@@ -1,4 +1,4 @@
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, request
 from django.views.decorators.csrf import csrf_exempt
 
 
@@ -18,14 +18,15 @@ def whatsapp_webhook(request):
         return HttpResponse(status=403)
 
     if request.method == "POST":
-        print("=" * 100)
-        print("WEBHOOK CALLED")
-        print(request.body.decode("utf-8"))
-        print("=" * 100)
+        print("\n" + "=" * 100)
+        print("🔥 WEBHOOK CALLED")
+        print("PATH:", request.path)
+        print("METHOD:", request.method)
+        print("HEADERS:", dict(request.headers))
+        print("BODY:", request.body.decode("utf-8"))
+        print("=" * 100 + "\n")
 
         return JsonResponse({"status": "ok"})
-
-    return JsonResponse({"error": "method not allowed"}, status=405)
 
 
 def privacy_policy(request):
