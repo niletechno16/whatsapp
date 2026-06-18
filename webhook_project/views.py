@@ -16,9 +16,9 @@ def whatsapp_webhook(request):
         return HttpResponse(status=403)
 
     if request.method == "POST":
-        try:
-            data = json.loads(request.body or "{}")
-            print("WHATSAPP EVENT:", data)
-        except Exception as e:
-            print(e)
+        print("=" * 100)
+        print("WEBHOOK CALLED")
+        print(request.body.decode("utf-8"))
+        print("=" * 100)
+
         return JsonResponse({"status": "ok"})
