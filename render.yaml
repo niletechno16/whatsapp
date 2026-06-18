@@ -1,0 +1,7 @@
+
+services:
+  - type: web
+    name: whatsapp-webhook
+    env: python
+    buildCommand: bash build.sh
+    startCommand: gunicorn webhook_project.wsgi:application
