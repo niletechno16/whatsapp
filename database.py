@@ -74,7 +74,10 @@ def get_state(phone: str) -> dict:
     conn = get_connection()
     cursor = conn.cursor(as_dict=True)
     cursor.execute(
-        "SELECT phone, stage, pending_summary FROM conversation_state WHERE phone = %s",
+        """
+        SELECT phone, stage, CAST(pending_summary AS VARCHAR(MAX)) AS pending_summary
+        FROM conversation_state WHERE phone = %s
+        """,
         (phone,),
     )
     row = cursor.fetchone()
