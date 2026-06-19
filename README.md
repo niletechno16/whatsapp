@@ -59,7 +59,7 @@ AI يلخص ➜ "دي التفاصيل: [...] متأكد؟"
 | `PHONE_NUMBER_ID` | من Meta API Setup |
 | `VERIFY_TOKEN` | أي كلمة تختارها لتفعيل الـ webhook |
 | `REGISTRATION_PASSWORD` | الباسورد الثابت اللي العميل هيدخله |
-| `GROQ_API_KEY` | من console.groq.com (مجاني) |
+| `GEMINI_API_KEY` | من aistudio.google.com/apikey (مجاني) |
 | `DB_SERVER` | عنوان سيرفر SQL Server |
 | `DB_NAME` | اسم قاعدة البيانات |
 | `DB_USER` | اسم المستخدم |

@@ -8,8 +8,8 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "test123")
 # Registration password (ثابت لكل العملاء)
 REGISTRATION_PASSWORD = os.getenv("REGISTRATION_PASSWORD", "")
 
-# AI Provider (Groq - مجاني)
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# AI Provider (Gemini)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # SQL Server
 DB_SERVER = os.getenv("DB_SERVER", "")
