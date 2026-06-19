@@ -16,5 +16,5 @@ DB_SERVER = os.getenv("DB_SERVER", "")
 DB_NAME = os.getenv("DB_NAME", "")
 DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-TDS_VERSION = os.getenv("TDS_VERSION")  # ممكن تحتاج تعدل حسب نسخة SQL Server عندك
-CHARSET = os.getenv("DB_CHARSET")  # ممكن تحتاج تعدل حسب إعدادات قاعدة البيانات عندك
+DB_TDS_VERSION = os.getenv("TDS_VERSION", "4.2")
+DB_CHARSET = os.getenv("DB_CHARSET", "UTF-8")

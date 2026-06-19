@@ -2,7 +2,7 @@ import httpx
 import json
 from config import GROQ_API_KEY
 
-GROQ_URL = ""
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
 async def _call_groq(system_prompt: str, user_message: str) -> str:

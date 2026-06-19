@@ -1,6 +1,6 @@
 import pymssql
 from datetime import datetime
-from config import CHARSET, DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, TDS_VERSION
+from config import DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, DB_TDS_VERSION, DB_CHARSET
 
 
 def get_connection():
@@ -9,8 +9,8 @@ def get_connection():
         user=DB_USER,
         password=DB_PASSWORD,
         database=DB_NAME,
-        tds_version=TDS_VERSION,
-        charset=CHARSET,
+        tds_version=DB_TDS_VERSION,
+        charset=DB_CHARSET,
     )
 
 

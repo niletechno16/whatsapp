@@ -27,7 +27,7 @@ async def mark_as_read_and_type(message_id: str):
 
 async def send_whatsapp_message(to_phone: str, message: str, message_id: str = None):
     """
-    يبعت رسالة بعد تأخير بسيط عشوائي (2-7 ثواني) مع إظهار 'يكتب الآن'
+    يبعت رسالة بعد تأخير بسيط عشوائي (2-4 ثواني) مع إظهار 'يكتب الآن'
     عشان يحس واتساب إن في إنسان بيرد مش بوت.
     """
     if message_id:
