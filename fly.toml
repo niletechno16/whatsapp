@@ -1,7 +1,8 @@
-app = "nile-bot"
+app = "nilebot"
 primary_region = "cdg"
 
 [build]
+  dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 8080
@@ -14,9 +15,6 @@ primary_region = "cdg"
     type = "requests"
     hard_limit = 200
     soft_limit = 100
-
-[processes]
-  app = "uvicorn main:app --host 0.0.0.0 --port 8080"
 
 [[vm]]
   size = "shared-cpu-1x"
