@@ -1,7 +1,15 @@
 import asyncio
+import io
+import os
 import random
+import sys
 import httpx
-from config import WHATSAPP_TOKEN, PHONE_NUMBER_ID
+from config import WHATSAPP_TOKEN, PHONE_NUMBER_ID 
+
+
+
+os.environ['PYTHONUNBUFFERED'] = '1'
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
 
 GRAPH_URL = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
 HEADERS = {

@@ -1,5 +1,5 @@
 import pymssql
-from config import DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, DB_TDS_VERSION, DB_CHARSET
+from config import DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, DB_TDS_VERSION, DB_CHARSET ,DB_PORT
 
 
 def get_connection():
@@ -10,6 +10,7 @@ def get_connection():
         database=DB_NAME,
         tds_version=DB_TDS_VERSION,
         charset=DB_CHARSET,
+        port=DB_PORT,
     )
 
 
