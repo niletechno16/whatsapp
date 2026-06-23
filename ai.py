@@ -77,15 +77,6 @@ async def chat_response(user_message: str, history: list = None, context: str = 
     return await _call_ai(system_prompt, user_message, history)
 
 
-async def summarize_details(raw_text: str, history: list = None) -> str:
-    system_prompt = (
-        "لخّص طلب التسجيل ده في نقاط واضحة ومنظمة. "
-        "استخرج التفاصيل المهمة بس. لا تضيف أي معلومة مش موجودة في النص. "
-        "أعد الملخص بس بدون أي مقدمات."
-    )
-    return await _call_ai(system_prompt, raw_text, history)
-
-
 async def is_affirmative(user_message: str) -> bool:
     system_prompt = (
         "مهمتك تحديد هل رسالة المستخدم موافقة أم لا.\n"
@@ -116,3 +107,71 @@ async def apply_modification(previous_summary: str, modification_text: str, hist
         f"الملخص السابق:\n{previous_summary}\n\nالتعديل:"
     )
     return await _call_ai(system_prompt, modification_text, history)
+
+
+# ================================================================
+# استخراج بيانات التسجيل المنظمة من كلام العميل الحر
+# ================================================================
+EXTRACTION_SYSTEM_PROMPT = (
+    "أنت تستخرج بيانات تسجيل عميل صيانة من كلام المستخدم (والمحادثة السابقة لو موجودة). "
+    "المطلوب 5 حقول بس:\n"
+    "1) اسم العميل\n"
+    "2) ID العميل (رقم أو كود تعريفي للعميل)\n"
+    "3) تاريخ التعاقد\n"
+    "4) تاريخ بدء الصيانة\n"
+    "5) تاريخ انتهاء الصيانة\n\n"
+    "لازم تكتب كل التواريخ بصيغة YYYY-MM-DD بالأرقام بس (حوّل أي صيغة تاريخ تانية لهذه الصيغة). "
+    "رد بالشكل ده بالضبط، سطر لكل حقل، وبدون أي شرح أو مقدمات:\n"
+    "اسم العميل: <القيمة أو NULL>\n"
+    "ID العميل: <القيمة أو NULL>\n"
+    "تاريخ التعاقد: <القيمة أو NULL>\n"
+    "تاريخ بدء الصيانة: <القيمة أو NULL>\n"
+    "تاريخ انتهاء الصيانة: <القيمة أو NULL>\n\n"
+    "لو حقل غير موجود أو غير واضح في كلام المستخدم اكتب NULL بالظبط بدل قيمته. "
+    "لا تخترع أي معلومة مش موجودة في النص."
+)
+
+
+def _parse_extraction(raw_text: str) -> dict:
+    mapping = {
+        "اسم العميل": "customer_name",
+        "ID العميل": "customer_id",
+        "تاريخ التعاقد": "contract_date",
+        "تاريخ بدء الصيانة": "maintenance_start",
+        "تاريخ انتهاء الصيانة": "maintenance_end",
+    }
+    result = {v: None for v in mapping.values()}
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        for label, key in mapping.items():
+            prefix = f"{label}:"
+            if line.startswith(prefix):
+                val = line.replace(prefix, "", 1).strip()
+                if val and val.upper() != "NULL":
+                    result[key] = val
+
+    return result
+
+
+async def extract_registration_info(raw_text: str, history: list = None) -> dict:
+    """
+    بيستخرج الحقول المطلوبة من كلام العميل.
+    يرجّع dict فيها:
+        customer_name, customer_id, contract_date,
+        maintenance_start, maintenance_end  (أي منهم ممكن يكون None لو ناقص)
+        missing_fields: list بأسماء الحقول الناقصة بالعربي
+    """
+    raw_result = await _call_ai(EXTRACTION_SYSTEM_PROMPT, raw_text, history)
+    parsed = _parse_extraction(raw_result)
+
+    label_by_key = {
+        "customer_name": "اسم العميل",
+        "customer_id": "ID العميل",
+        "contract_date": "تاريخ التعاقد",
+        "maintenance_start": "تاريخ بدء الصيانة",
+        "maintenance_end": "تاريخ انتهاء الصيانة",
+    }
+    missing = [label for key, label in label_by_key.items() if not parsed.get(key)]
+    parsed["missing_fields"] = missing
+    return parsed
