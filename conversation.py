@@ -1,34 +1,45 @@
 from config import REGISTRATION_PASSWORD
 from database import get_state, update_state, reset_state, save_registration
-from ai import summarize_details, is_affirmative, apply_modification
+from ai import chat_response, summarize_details, is_affirmative, apply_modification
 
 
 async def handle_message(phone: str, text: str) -> str:
     """
-    بيستقبل رسالة العميل ويرجع الرد المناسب حسب مرحلة المحادثة.
-    المراحل: awaiting_password -> awaiting_details -> awaiting_confirmation -> (تسجيل) -> awaiting_password
+    محادثة طبيعية مع الحفاظ على state لعملية التسجيل.
+
+    المراحل:
+    - idle: محادثة عادية، لو المستخدم عايز يسجل يطلب منه الباسورد
+    - awaiting_password: انتظار الباسورد
+    - awaiting_details: استقبال التفاصيل
+    - awaiting_confirmation: تأكيد أو تعديل
     """
     state = get_state(phone)
     stage = state["stage"]
 
-    # ─── المرحلة 1: انتظار الباسورد ─────────────────────────────────────────
+    # ─── في منتصف عملية تسجيل: انتظار الباسورد ──────────────────────────────
     if stage == "awaiting_password":
         if text.strip() == REGISTRATION_PASSWORD:
             update_state(phone, "awaiting_details")
-            return "تمام ✅ تفضل قولي التفاصيل اللي عايز تسجلها."
+            return "تمام ✅ قولي التفاصيل اللي عايز تسجلها."
         else:
-            return "الباسورد غير صحيح ❌ من فضلك ابعت الباسورد الصحيح عشان نكمل عملية التسجيل."
+            # ممكن يكون بيتكلم عادي مش بيدخل باسورد
+            ai_reply = await chat_response(
+                text,
+                context="المستخدم ده طلب قبل كده إنه يسجل بيانات وانت بتستنى الباسورد منه. "
+                        "لو بيتكلم عادي رد عليه طبيعي وذكّره إنك محتاج الباسورد عشان تكمل التسجيل."
+            )
+            return ai_reply
 
-    # ─── المرحلة 2: استقبال التفاصيل الحرة من العميل ───────────────────────
+    # ─── في منتصف عملية تسجيل: استقبال التفاصيل ────────────────────────────
     if stage == "awaiting_details":
         summary = await summarize_details(text)
         update_state(phone, "awaiting_confirmation", pending_summary=summary)
         return (
             f"تمام، دي التفاصيل اللي هسجلها:\n\n{summary}\n\n"
-            "متأكد عايز أسجلها كده؟ (لو فيها تعديل قولي إيه التعديل)"
+            "متأكد عايز أسجلها كده؟"
         )
 
-    # ─── المرحلة 3: انتظار التأكيد أو التعديل ───────────────────────────────
+    # ─── في منتصف عملية تسجيل: انتظار التأكيد ──────────────────────────────
     if stage == "awaiting_confirmation":
         confirmed = await is_affirmative(text)
 
@@ -36,12 +47,14 @@ async def handle_message(phone: str, text: str) -> str:
             success = save_registration(phone, state["pending_summary"])
             if success:
                 reset_state(phone)
-                return "تم التسجيل بنجاح ✅"
+                return (
+                    "✅ تم التسجيل بنجاح!\n\n"
+                    f"*التفاصيل المسجلة:*\n{state['pending_summary']}\n\n"
+                    "لو عايز تسجل حاجة تانية ابعتلي التفاصيل وانا هساعدك. 😊"
+                )
             else:
-                # فشل التسجيل - نسيب العميل في نفس المرحلة عشان يعيد المحاولة
-                return "فشل التسجيل ❌ هيتم إعادة المحاولة، من فضلك أكد تاني."
+                return "❌ فشل التسجيل، حاول تاني."
         else:
-            # العميل طلب تعديل - ندمج التعديل مع الملخص القديم
             new_summary = await apply_modification(state["pending_summary"], text)
             update_state(phone, "awaiting_confirmation", pending_summary=new_summary)
             return (
@@ -49,6 +62,20 @@ async def handle_message(phone: str, text: str) -> str:
                 "متأكد عايز أسجلها كده؟"
             )
 
-    # fallback - حالة غير متوقعة
-    reset_state(phone)
-    return "محتاج منك الباسورد عشان أكمل عملية التسجيل."
+    # ─── idle: محادثة عادية ──────────────────────────────────────────────────
+    # الـ AI هيقرر لو المستخدم عايز يسجل ويطلب منه الباسورد
+    ai_reply = await chat_response(
+        text,
+        context=(
+            "لو المستخدم بيطلب تسجيل أي بيانات أو حاجة محتاج تتسجل، "
+            "قوله 'عشان أسجلها محتاج الباسورد أولاً' وخليه يبعتهولك. "
+            "لو بيتكلم عادي أو بيسأل، رد عليه بشكل طبيعي ومفيد."
+        )
+    )
+
+    # لو الـ AI طلب الباسورد، نحوّل الـ stage
+    keywords = ["الباسورد", "باسورد", "كلمة السر", "password"]
+    if any(kw in ai_reply for kw in keywords):
+        update_state(phone, "awaiting_password")
+
+    return ai_reply
