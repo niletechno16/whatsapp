@@ -1,4 +1,4 @@
 fastapi==0.111.0
 uvicorn==0.30.1
-pymssql==2.2.11
+pymssql
 httpx==0.27.0
