@@ -68,13 +68,21 @@ async def _call_ai(system_prompt: str, user_message: str, history: list = None) 
     raise RuntimeError("عذراً، في مشكلة مؤقتة. حاول تاني بعد شوية.")
 
 
-async def chat_response(user_message: str, history: list = None, context: str = "") -> str:
+async def wants_to_register(user_message: str, history: list = None) -> bool:
+    """
+    بيحدد بس هل المستخدم بيطلب تسجيل بيانات عميل صيانة أم لا.
+    مفيش رد حر للبوت في أي سياق تاني، البوت مخصص للتسجيل بس.
+    """
     system_prompt = (
-        "أنت مساعد واتساب بشري ودود. رد بشكل طبيعي وقصير على رسالة المستخدم. "
-        "لو المستخدم بيطلب تسجيل أي بيانات، قوله إنه محتاج الباسورد الأول. "
-        f"{context}"
+        "مهمتك الوحيدة إنك تحدد هل المستخدم بيطلب تسجيل بيانات عميل صيانة أم لا.\n"
+        "لو طلب تسجيل بيانات عميل (اسم، ID، تواريخ تعاقد أو صيانة) أو قال كلام زي "
+        "'عايز أسجل'، 'سجل لي'، 'تسجيل عميل': أجب بكلمة REGISTER بس.\n"
+        "غير كده (أي سؤال أو طلب أو كلام عادي مش متعلق بتسجيل بيانات عميل): "
+        "أجب بكلمة OTHER بس.\n"
+        "أجب بكلمة واحدة فقط بدون أي شرح."
     )
-    return await _call_ai(system_prompt, user_message, history)
+    result = await _call_ai(system_prompt, user_message, history)
+    return "REGISTER" in result.upper()
 
 
 async def is_affirmative(user_message: str) -> bool:

@@ -1,4 +1,3 @@
-import json
 import pymssql
 from config import DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, DB_TDS_VERSION, DB_CHARSET
 
@@ -23,6 +22,15 @@ def _sanitize_cp1256(text):
 
 
 def setup_tables():
+    """
+    بيعمل الجداول لو مش موجودة، ولو موجودة بالفعل ميعملها تاني (IF NOT EXISTS)
+    ويفضل يضيف فيها عادي. الجدولين الوحيدين دلوقتي:
+    whatsapp_messages_byA و bot_information_byA.
+
+    العربي بيتسجل صح لإننا بنحدد COLLATE صريح في الأعمدة (Arabic_CI_AS)
+    عشان نضمن التوافق مع charset='CP1256' في الكونكشن، بدل ما نعتمد
+    على الـ collation الافتراضي للسيرفر اللي ممكن يكون مختلف.
+    """
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -30,45 +38,24 @@ def setup_tables():
         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='whatsapp_messages_byA' AND xtype='U')
         CREATE TABLE whatsapp_messages_byA (
             id          INT IDENTITY(1,1) PRIMARY KEY,
-            phone       VARCHAR(30)       NOT NULL,
-            message     VARCHAR(MAX)      NOT NULL,
-            received_at DATETIME          DEFAULT GETDATE()
+            phone       VARCHAR(30)  COLLATE Arabic_CI_AS  NOT NULL,
+            message     VARCHAR(MAX) COLLATE Arabic_CI_AS  NOT NULL,
+            received_at DATETIME     DEFAULT GETDATE()
         )
     """)
 
-    cursor.execute("""
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state_byA' AND xtype='U')
-        CREATE TABLE conversation_state_byA (
-            phone           VARCHAR(30)   PRIMARY KEY,
-            stage           VARCHAR(30)   NOT NULL DEFAULT 'idle',
-            pending_summary VARCHAR(MAX)  NULL,
-            chat_history    VARCHAR(MAX)  NULL,
-            updated_at      DATETIME      DEFAULT GETDATE()
-        )
-    """)
-
-    cursor.execute("""
-        IF EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state_byA' AND xtype='U')
-        AND NOT EXISTS (
-            SELECT * FROM sys.columns
-            WHERE object_id = OBJECT_ID('conversation_state_byA') AND name = 'chat_history'
-        )
-        ALTER TABLE conversation_state_byA ADD chat_history VARCHAR(MAX) NULL
-    """)
-
-    # ─── جدول بيانات العميل المنظمة (الجدول الوحيد اللي بيتسجل فيه التسجيل دلوقتي) ───
     cursor.execute("""
         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bot_information_byA' AND xtype='U')
         CREATE TABLE bot_information_byA (
             id                    INT IDENTITY(1,1) PRIMARY KEY,
-            phone                 VARCHAR(30)   NOT NULL,
-            customer_name         VARCHAR(255)  NOT NULL,
-            customer_id           VARCHAR(100)  NOT NULL,
-            contract_date         VARCHAR(20)   NOT NULL,
-            maintenance_start     VARCHAR(20)   NOT NULL,
-            maintenance_end       VARCHAR(20)   NOT NULL,
-            remaining_days        INT           NOT NULL,
-            created_at            DATETIME      DEFAULT GETDATE()
+            phone                 VARCHAR(30)  COLLATE Arabic_CI_AS  NOT NULL,
+            customer_name         VARCHAR(255) COLLATE Arabic_CI_AS  NOT NULL,
+            customer_id           VARCHAR(100) COLLATE Arabic_CI_AS  NOT NULL,
+            contract_date         VARCHAR(20)  NOT NULL,
+            maintenance_start     VARCHAR(20)  NOT NULL,
+            maintenance_end       VARCHAR(20)  NOT NULL,
+            remaining_days        INT          NOT NULL,
+            created_at            DATETIME     DEFAULT GETDATE()
         )
     """)
 
@@ -88,77 +75,13 @@ def save_message(phone: str, message: str):
     conn.close()
 
 
-# ─── Conversation state ────────────────────────────────────────────────────
-def get_state(phone: str) -> dict:
-    conn = get_connection()
-    cursor = conn.cursor(as_dict=True)
-    cursor.execute(
-        """
-        SELECT phone, stage,
-               CAST(pending_summary AS VARCHAR(MAX)) AS pending_summary,
-               CAST(chat_history    AS VARCHAR(MAX)) AS chat_history
-        FROM conversation_state_byA WHERE phone = %s
-        """,
-        (phone,),
-    )
-    row = cursor.fetchone()
-
-    if row is None:
-        cursor.execute(
-            "INSERT INTO conversation_state_byA (phone, stage) VALUES (%s, 'idle')",
-            (phone,),
-        )
-        conn.commit()
-        row = {"phone": phone, "stage": "idle", "pending_summary": None, "chat_history": None}
-
-    conn.close()
-
-    raw_history = row.get("chat_history")
-    if raw_history:
-        try:
-            row["chat_history"] = json.loads(raw_history)
-        except Exception:
-            row["chat_history"] = []
-    else:
-        row["chat_history"] = []
-
-    return row
-
-
-def update_state(phone: str, stage: str, pending_summary: str = None, chat_history: list = None):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    encoded_summary = _sanitize_cp1256(pending_summary)
-
-    if chat_history is not None:
-        history_json = json.dumps(chat_history, ensure_ascii=False)
-        encoded_history = _sanitize_cp1256(history_json)
-    else:
-        encoded_history = None
-
-    cursor.execute(
-        """
-        UPDATE conversation_state_byA
-        SET stage = %s, pending_summary = %s, chat_history = %s, updated_at = GETDATE()
-        WHERE phone = %s
-        """,
-        (stage, encoded_summary, encoded_history, phone),
-    )
-    conn.commit()
-    conn.close()
-
-
-def reset_state(phone: str):
-    update_state(phone, "idle", pending_summary=None, chat_history=[])
-
-
 # ─── Bot information (الجدول المنظم الوحيد اللي بيتسجل فيه) ────────────────
-def save_bot_information(phone: str, info: dict) -> bool:
+def save_bot_information(phone: str, info: dict, remaining_days: int) -> bool:
     """
     info لازم يحتوي على المفاتيح:
     customer_name, customer_id, contract_date,
-    maintenance_start, maintenance_end, remaining_days
+    maintenance_start, maintenance_end
+    remaining_days: الفرق بالأيام بين تاريخ انتهاء الصيانة واليوم الحالي
     """
     try:
         conn = get_connection()
@@ -177,7 +100,7 @@ def save_bot_information(phone: str, info: dict) -> bool:
                 info["contract_date"],
                 info["maintenance_start"],
                 info["maintenance_end"],
-                info["remaining_days"],
+                remaining_days,
             ),
         )
         conn.commit()
