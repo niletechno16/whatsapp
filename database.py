@@ -13,12 +13,11 @@ def get_connection():
     )
 
 
-def _sanitize_cp1256(text):
-    """يشيل أي حرف ما ينفعش يتخزن بترميز CP1256 (مثلاً حروف غريبة
-    ممكن الـ AI يطلعها غلط)، بدل ما الإدخال في الداتابيز يفشل بالكامل."""
+def _sanitize_text(text):
+    """يشيل أي حرف NULL محتمل يكسر الـ SQL، ويحافظ على العربي كامل بـ Unicode."""
     if not text:
         return text
-    return text.encode('cp1256', errors='ignore').decode('cp1256')
+    return text.replace('\x00', '')
 
 
 def setup_tables():
@@ -72,7 +71,7 @@ def setup_tables():
 
 # ─── Raw messages log ──────────────────────────────────────────────────────
 def save_message(phone: str, message: str):
-    message = _sanitize_cp1256(message)
+    message = _sanitize_text(message)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -91,8 +90,8 @@ def save_bot_information(phone: str, info: dict, remaining_days: int) -> bool:
     maintenance_start, maintenance_end
     remaining_days: الفرق بالأيام بين تاريخ انتهاء الصيانة واليوم الحالي
     """
-    customer_name = _sanitize_cp1256(info["customer_name"])
-    customer_id = _sanitize_cp1256(info["customer_id"])
+    customer_name = _sanitize_text(info["customer_name"])
+    customer_id = _sanitize_text(info["customer_id"])
     try:
         conn = get_connection()
         cursor = conn.cursor()
