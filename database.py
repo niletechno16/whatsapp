@@ -21,8 +21,8 @@ def setup_tables():
 
     # جدول الرسايل الخام (لوج لكل حاجة بتتبعت)
     cursor.execute("""
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='whatsapp_messages' AND xtype='U')
-        CREATE TABLE whatsapp_messages (
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='whatsapp_messages_byA' AND xtype='U')
+        CREATE TABLE whatsapp_messages_byA (
             id          INT IDENTITY(1,1) PRIMARY KEY,
             phone       VARCHAR(30)       NOT NULL,
             message     NVARCHAR(MAX)     NOT NULL,
@@ -32,8 +32,8 @@ def setup_tables():
 
     # جدول حالة المحادثة لكل عميل (مين واصل لفين في الـ flow)
     cursor.execute("""
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state' AND xtype='U')
-        CREATE TABLE conversation_state (
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state_byA' AND xtype='U')
+        CREATE TABLE conversation_state_byA (
             phone           VARCHAR(30)   PRIMARY KEY,
             stage           VARCHAR(30)   NOT NULL DEFAULT 'awaiting_password',
             pending_summary NVARCHAR(MAX) NULL,
@@ -43,8 +43,8 @@ def setup_tables():
 
     # جدول التسجيلات النهائية
     cursor.execute("""
-        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='registrations' AND xtype='U')
-        CREATE TABLE registrations (
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='registrations_byA' AND xtype='U')
+        CREATE TABLE registrations_byA (
             id           INT IDENTITY(1,1) PRIMARY KEY,
             phone        VARCHAR(30)       NOT NULL,
             details      NVARCHAR(MAX)     NOT NULL,
@@ -61,7 +61,7 @@ def save_message(phone: str, message: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO whatsapp_messages (phone, message) VALUES (%s, %s)",
+        "INSERT INTO whatsapp_messages_byA (phone, message) VALUES (%s, %s)",
         (phone, message),
     )
     conn.commit()
@@ -76,7 +76,7 @@ def get_state(phone: str) -> dict:
     cursor.execute(
         """
         SELECT phone, stage, CAST(pending_summary AS VARCHAR(MAX)) AS pending_summary
-        FROM conversation_state WHERE phone = %s
+        FROM conversation_state_byA WHERE phone = %s
         """,
         (phone,),
     )
@@ -84,7 +84,7 @@ def get_state(phone: str) -> dict:
 
     if row is None:
         cursor.execute(
-            "INSERT INTO conversation_state (phone, stage) VALUES (%s, 'awaiting_password')",
+            "INSERT INTO conversation_state_byA (phone, stage) VALUES (%s, 'awaiting_password')",
             (phone,),
         )
         conn.commit()
@@ -99,7 +99,7 @@ def update_state(phone: str, stage: str, pending_summary: str = None):
     cursor = conn.cursor()
     cursor.execute(
         """
-        UPDATE conversation_state
+        UPDATE conversation_state_byA
         SET stage = %s, pending_summary = %s, updated_at = GETDATE()
         WHERE phone = %s
         """,
@@ -121,7 +121,7 @@ def save_registration(phone: str, details: str) -> bool:
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO registrations (phone, details) VALUES (%s, %s)",
+            "INSERT INTO registrations_byA (phone, details) VALUES (%s, %s)",
             (phone, details),
         )
         conn.commit()
