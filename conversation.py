@@ -1,81 +1,108 @@
 from config import REGISTRATION_PASSWORD
 from database import get_state, update_state, reset_state, save_registration
-from ai import chat_response, summarize_details, is_affirmative, apply_modification
+from ai import chat_response, summarize_details, is_affirmative, check_has_modification, apply_modification
+
+
+def _add_to_history(history: list, user_msg: str, bot_reply: str) -> list:
+    """يضيف رسالة المستخدم ورد البوت للـ history"""
+    updated = list(history or [])
+    updated.append({"role": "user", "content": user_msg})
+    updated.append({"role": "assistant", "content": bot_reply})
+    return updated
 
 
 async def handle_message(phone: str, text: str) -> str:
-    """
-    محادثة طبيعية مع الحفاظ على state لعملية التسجيل.
-
-    المراحل:
-    - idle: محادثة عادية، لو المستخدم عايز يسجل يطلب منه الباسورد
-    - awaiting_password: انتظار الباسورد
-    - awaiting_details: استقبال التفاصيل
-    - awaiting_confirmation: تأكيد أو تعديل
-    """
     state = get_state(phone)
     stage = state["stage"]
+    history = state.get("chat_history") or []
+    pending_summary = state.get("pending_summary")
 
-    # ─── في منتصف عملية تسجيل: انتظار الباسورد ──────────────────────────────
+    # ─── انتظار الباسورد ──────────────────────────────────────────────────────
     if stage == "awaiting_password":
         if text.strip() == REGISTRATION_PASSWORD:
-            update_state(phone, "awaiting_details")
-            return "تمام ✅ قولي التفاصيل اللي عايز تسجلها."
+            reply = "تمام ✅ قولي التفاصيل اللي عايز تسجلها."
+            new_history = _add_to_history(history, text, reply)
+            update_state(phone, "awaiting_details", pending_summary=None, chat_history=new_history)
+            return reply
         else:
-            # ممكن يكون بيتكلم عادي مش بيدخل باسورد
-            ai_reply = await chat_response(
+            reply = await chat_response(
                 text,
-                context="المستخدم ده طلب قبل كده إنه يسجل بيانات وانت بتستنى الباسورد منه. "
-                        "لو بيتكلم عادي رد عليه طبيعي وذكّره إنك محتاج الباسورد عشان تكمل التسجيل."
+                history=history,
+                context="المستخدم طلب تسجيل بيانات وانت بتستنى الباسورد منه. "
+                        "لو بيتكلم عادي رد عليه طبيعي وذكّره إنك محتاج الباسورد."
             )
-            return ai_reply
+            new_history = _add_to_history(history, text, reply)
+            update_state(phone, "awaiting_password", pending_summary=None, chat_history=new_history)
+            return reply
 
-    # ─── في منتصف عملية تسجيل: استقبال التفاصيل ────────────────────────────
+    # ─── استقبال التفاصيل ────────────────────────────────────────────────────
     if stage == "awaiting_details":
-        summary = await summarize_details(text)
-        update_state(phone, "awaiting_confirmation", pending_summary=summary)
-        return (
+        summary = await summarize_details(text, history=history)
+        reply = (
             f"تمام، دي التفاصيل اللي هسجلها:\n\n{summary}\n\n"
             "متأكد عايز أسجلها كده؟"
         )
+        new_history = _add_to_history(history, text, reply)
+        update_state(phone, "awaiting_confirmation", pending_summary=summary, chat_history=new_history)
+        return reply
 
-    # ─── في منتصف عملية تسجيل: انتظار التأكيد ──────────────────────────────
+    # ─── انتظار التأكيد أو التعديل ───────────────────────────────────────────
     if stage == "awaiting_confirmation":
         confirmed = await is_affirmative(text)
 
         if confirmed:
-            success = save_registration(phone, state["pending_summary"])
+            success = save_registration(phone, pending_summary)
             if success:
-                reset_state(phone)
-                return (
+                reply = (
                     "✅ تم التسجيل بنجاح!\n\n"
-                    f"*التفاصيل المسجلة:*\n{state['pending_summary']}\n\n"
+                    f"*التفاصيل المسجلة:*\n{pending_summary}\n\n"
                     "لو عايز تسجل حاجة تانية ابعتلي التفاصيل وانا هساعدك. 😊"
                 )
+                # التسجيل خلص — امسح الذاكرة كلها وابدأ من أول
+                reset_state(phone)
+                return reply
             else:
-                return "❌ فشل التسجيل، حاول تاني."
+                reply = "❌ فشل التسجيل، حاول تاني."
+                new_history = _add_to_history(history, text, reply)
+                update_state(phone, "awaiting_confirmation", pending_summary=pending_summary, chat_history=new_history)
+                return reply
         else:
-            new_summary = await apply_modification(state["pending_summary"], text)
-            update_state(phone, "awaiting_confirmation", pending_summary=new_summary)
-            return (
-                f"تمام، دي التعديلات الجديدة:\n\n{new_summary}\n\n"
-                "متأكد عايز أسجلها كده؟"
-            )
+            has_real_modification = await check_has_modification(text)
+
+            if has_real_modification:
+                new_summary = await apply_modification(pending_summary, text, history=history)
+                reply = (
+                    f"تمام، دي التفاصيل بعد التعديل:\n\n{new_summary}\n\n"
+                    "متأكد عايز أسجلها كده؟"
+                )
+                new_history = _add_to_history(history, text, reply)
+                update_state(phone, "awaiting_confirmation", pending_summary=new_summary, chat_history=new_history)
+                return reply
+            else:
+                reply = (
+                    f"التفاصيل دي:\n\n{pending_summary}\n\n"
+                    "هل تأكد تسجيلها ولا عايز تعدّل فيها؟"
+                )
+                new_history = _add_to_history(history, text, reply)
+                update_state(phone, "awaiting_confirmation", pending_summary=pending_summary, chat_history=new_history)
+                return reply
 
     # ─── idle: محادثة عادية ──────────────────────────────────────────────────
-    # الـ AI هيقرر لو المستخدم عايز يسجل ويطلب منه الباسورد
-    ai_reply = await chat_response(
+    reply = await chat_response(
         text,
+        history=history,
         context=(
-            "لو المستخدم بيطلب تسجيل أي بيانات أو حاجة محتاج تتسجل، "
-            "قوله 'عشان أسجلها محتاج الباسورد أولاً' وخليه يبعتهولك. "
-            "لو بيتكلم عادي أو بيسأل، رد عليه بشكل طبيعي ومفيد."
+            "لو المستخدم بيطلب تسجيل أي بيانات، "
+            "قوله 'عشان أسجلها محتاج الباسورد أولاً'. "
+            "لو بيتكلم عادي، رد عليه بشكل طبيعي ومفيد."
         )
     )
 
+    new_history = _add_to_history(history, text, reply)
+
     # لو الـ AI طلب الباسورد، نحوّل الـ stage
     keywords = ["الباسورد", "باسورد", "كلمة السر", "password"]
-    if any(kw in ai_reply for kw in keywords):
-        update_state(phone, "awaiting_password")
+    new_stage = "awaiting_password" if any(kw in reply for kw in keywords) else "idle"
+    update_state(phone, new_stage, pending_summary=None, chat_history=new_history)
 
-    return ai_reply
+    return reply

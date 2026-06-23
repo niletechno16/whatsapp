@@ -1,5 +1,5 @@
+import json
 import pymssql
-from datetime import datetime
 from config import DB_SERVER, DB_NAME, DB_USER, DB_PASSWORD, DB_TDS_VERSION, DB_CHARSET
 
 
@@ -15,11 +15,9 @@ def get_connection():
 
 
 def setup_tables():
-    """إنشاء الجداول لو مش موجودة"""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # جدول الرسايل الخام (لوج لكل حاجة بتتبعت)
     cursor.execute("""
         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='whatsapp_messages_byA' AND xtype='U')
         CREATE TABLE whatsapp_messages_byA (
@@ -30,18 +28,24 @@ def setup_tables():
         )
     """)
 
-    # جدول حالة المحادثة لكل عميل (مين واصل لفين في الـ flow)
     cursor.execute("""
         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state_byA' AND xtype='U')
         CREATE TABLE conversation_state_byA (
             phone           VARCHAR(30)   PRIMARY KEY,
-            stage           VARCHAR(30)   NOT NULL DEFAULT 'awaiting_password',
+            stage           VARCHAR(30)   NOT NULL DEFAULT 'idle',
             pending_summary NVARCHAR(MAX) NULL,
+            chat_history    NVARCHAR(MAX) NULL,
             updated_at      DATETIME      DEFAULT GETDATE()
         )
     """)
 
-    # جدول التسجيلات النهائية
+    # لو الجدول موجود بس column chat_history مش موجود، نضيفه
+    cursor.execute("""
+        IF EXISTS (SELECT * FROM sysobjects WHERE name='conversation_state_byA' AND xtype='U')
+        AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('conversation_state_byA') AND name = 'chat_history')
+        ALTER TABLE conversation_state_byA ADD chat_history NVARCHAR(MAX) NULL
+    """)
+
     cursor.execute("""
         IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='registrations_byA' AND xtype='U')
         CREATE TABLE registrations_byA (
@@ -70,12 +74,13 @@ def save_message(phone: str, message: str):
 
 # ─── Conversation state ────────────────────────────────────────────────────
 def get_state(phone: str) -> dict:
-    """رجع حالة العميل، ولو أول مرة يعمله حالة جديدة"""
     conn = get_connection()
     cursor = conn.cursor(as_dict=True)
     cursor.execute(
         """
-        SELECT phone, stage, CAST(pending_summary AS VARCHAR(MAX)) AS pending_summary
+        SELECT phone, stage,
+               CAST(pending_summary AS VARCHAR(MAX)) AS pending_summary,
+               CAST(chat_history AS VARCHAR(MAX)) AS chat_history
         FROM conversation_state_byA WHERE phone = %s
         """,
         (phone,),
@@ -84,39 +89,43 @@ def get_state(phone: str) -> dict:
 
     if row is None:
         cursor.execute(
-            "INSERT INTO conversation_state_byA (phone, stage) VALUES (%s, 'awaiting_password')",
+            "INSERT INTO conversation_state_byA (phone, stage) VALUES (%s, 'idle')",
             (phone,),
         )
         conn.commit()
-        row = {"phone": phone, "stage": "awaiting_password", "pending_summary": None}
+        row = {"phone": phone, "stage": "idle", "pending_summary": None, "chat_history": None}
 
     conn.close()
+
+    # parse chat_history من JSON
+    raw_history = row.get("chat_history")
+    row["chat_history"] = json.loads(raw_history) if raw_history else []
     return row
 
 
-def update_state(phone: str, stage: str, pending_summary: str = None):
+def update_state(phone: str, stage: str, pending_summary: str = None, chat_history: list = None):
     conn = get_connection()
     cursor = conn.cursor()
+    history_json = json.dumps(chat_history, ensure_ascii=False) if chat_history is not None else None
     cursor.execute(
         """
         UPDATE conversation_state_byA
-        SET stage = %s, pending_summary = %s, updated_at = GETDATE()
+        SET stage = %s, pending_summary = %s, chat_history = %s, updated_at = GETDATE()
         WHERE phone = %s
         """,
-        (stage, pending_summary, phone),
+        (stage, pending_summary, history_json, phone),
     )
     conn.commit()
     conn.close()
 
 
 def reset_state(phone: str):
-    """يرجع العميل لأول الـ flow (بعد ما يخلص تسجيل مثلاً)"""
-    update_state(phone, "awaiting_password", None)
+    """يمسح كل حاجة: الـ stage والذاكرة والـ summary"""
+    update_state(phone, "idle", pending_summary=None, chat_history=[])
 
 
 # ─── Registrations ──────────────────────────────────────────────────────────
 def save_registration(phone: str, details: str) -> bool:
-    """يحفظ التسجيل النهائي. بيرجع True لو نجح و False لو فشل"""
     try:
         conn = get_connection()
         cursor = conn.cursor()
